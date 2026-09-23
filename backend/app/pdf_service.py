@@ -62,7 +62,8 @@ def parse_pdf(path: Path) -> ParsedPdf:
                     continue
                 code = clean_text(line[1][4])
                 rect = fitz.Rect(0, max(header_y + 3, y - 2), page.rect.width, next_y - 1)
-                item_rect = fitz.Rect(line[0][0] - 1, rect.y0, line[0][2] + 2, rect.y1)
+                item_boundary = (line[0][2] + line[1][0]) / 2
+                item_rect = fitz.Rect(line[0][0] - 1, rect.y0, item_boundary, rect.y1)
                 tokens = tuple(w[4] for w in row_words)
                 numeric = [money(t) for t in tokens if money(t) is not None]
                 description = " ".join(w[4] for w in line[2:] if money(w[4]) is None)
@@ -112,12 +113,11 @@ def create_reordered_pdf(source: Path, destination: Path, original: list[PdfItem
             page.apply_redactions()
         for new_number, (slot, item) in enumerate(zip(slots, ordered), 1):
             target = out[slot.page]
-            # Copy the complete vector row from the original (including borders),
-            # then cover only the number glyph inside the first cell.
-            target.show_pdf_page(slot.rect, src, item.page, clip=item.rect, keep_proportion=False, overlay=True)
-            number_cover = fitz.Rect(slot.item_rect.x0 + 1, slot.item_rect.y0 + 1,
-                                     slot.item_rect.x1 - 1, slot.item_rect.y1 - 1)
-            target.draw_rect(number_cover, color=None, fill=(1, 1, 1), overlay=True)
+            # Excluding the first cell prevents the old item number from
+            # remaining in the searchable text layer under a white rectangle.
+            source_clip = fitz.Rect(item.item_rect.x1, item.rect.y0, item.rect.x1, item.rect.y1)
+            target_rect = fitz.Rect(slot.item_rect.x1, slot.rect.y0, slot.rect.x1, slot.rect.y1)
+            target.show_pdf_page(target_rect, src, item.page, clip=source_clip, keep_proportion=False, overlay=True)
             target.insert_textbox(slot.item_rect, str(new_number), fontsize=8, fontname="helv", align=fitz.TEXT_ALIGN_CENTER)
         out.save(destination, garbage=4, deflate=True)
     finally:

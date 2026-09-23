@@ -36,6 +36,21 @@ npm run dev
 Acesse `http://localhost:5173`. A documentação da API fica em
 `http://localhost:8000/docs`.
 
+## Implantação na Vercel
+
+O projeto da Vercel deve usar a **raiz do repositório** (`./`) como Root
+Directory. O `vercel.json` fixa o preset Vite, executa `npm install` e
+`npm run build`, publica `frontend/dist` e encaminha `/api/*` para a função
+Python ASGI em `api/index.py`. As demais rotas recebem `index.html`, incluindo
+a rota principal `/`.
+
+Na Vercel, a função é stateless: por isso o frontend envia a planilha junto com
+o PDF na geração, e o PDF resultante volta na própria resposta. Isso evita
+depender de memória ou arquivos temporários entre duas invocações. O limite de
+payload da conta Vercel ainda se aplica; para documentos acima desse limite ou
+para retenção durável da planilha base entre dispositivos, utilize o mesmo
+backend em um serviço persistente privado.
+
 ## Limites e segurança operacional
 
 O detector é deliberadamente conservador: ele exige cabeçalho de tabela e colunas
@@ -43,4 +58,3 @@ de código/descrição reconhecíveis. PDFs digitalizados (sem camada de texto),
 linhas de alturas diferentes ou tabelas fora do padrão devem ser recusados para
 revisão, em vez de gerar um documento potencialmente incorreto. Antes de produção,
 homologue cada variante de template VIMAN com documentos reais e mantenha backup.
-

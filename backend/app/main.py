@@ -1,6 +1,8 @@
 import shutil
 import tempfile
 import uuid
+import base64
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -68,8 +70,16 @@ async def analyze_pdf(file: UploadFile = File(...)):
 
 
 @app.post("/api/process")
-async def process(file: UploadFile = File(...)):
+async def process(file: UploadFile = File(...), spreadsheet: UploadFile | None = File(None)):
     base = get_base()
+    if spreadsheet is not None:
+        suffix = Path(spreadsheet.filename or "").suffix.lower()
+        if suffix not in {".xlsx", ".xls"}:
+            raise HTTPException(400, "Envie uma planilha .xlsx ou .xls.")
+        uploaded_base = Path(tempfile.mkdtemp(prefix="base_")) / f"base{suffix}"
+        with uploaded_base.open("wb") as destination:
+            shutil.copyfileobj(spreadsheet.file, destination)
+        base = {"name": safe_name(spreadsheet.filename), "path": str(uploaded_base)}
     if not base or not Path(base["path"]).exists():
         raise HTTPException(409, "Carregue uma planilha base antes de processar.")
     token = uuid.uuid4().hex
@@ -96,8 +106,17 @@ async def process(file: UploadFile = File(...)):
         audit(spreadsheet_name=base["name"], pdf_name=safe_name(file.filename), budget_number=parsed.budget_number,
               item_count=len(parsed.items), found_count=len(parsed.items)-missing, missing_count=missing, integrity="OK")
         preview = [{"original_order": item.original_order, "new_order": i, "code": item.code, "description": item.description} for i, item in enumerate(ordered, 1)]
-        return {"token": token, "budget_number": parsed.budget_number, "patient": parsed.patient, "total": parsed.total,
-                "item_count": len(ordered), "missing_count": missing, "preview": preview}
+        response = {"token": token, "budget_number": parsed.budget_number, "patient": parsed.patient, "total": parsed.total,
+                    "item_count": len(ordered), "missing_count": missing, "preview": preview}
+        # Serverless invocations do not share memory or /tmp. Return the result
+        # with the metadata so download never depends on a later invocation.
+        if os.getenv("VERCEL"):
+            response["pdf_base64"] = base64.b64encode(output.read_bytes()).decode("ascii")
+            shutil.rmtree(work, ignore_errors=True)
+            RESULTS.pop(token, None)
+        if spreadsheet is not None:
+            shutil.rmtree(Path(base["path"]).parent, ignore_errors=True)
+        return response
     except (PdfError, SpreadsheetError) as exc:
         shutil.rmtree(work, ignore_errors=True)
         raise HTTPException(422, str(exc)) from exc
