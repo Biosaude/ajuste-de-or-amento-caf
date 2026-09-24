@@ -46,13 +46,15 @@ def make_real_layout_viman_pdf(path: Path) -> None:
     totals = ["200,00", "300,00", "400,00", "1.000,00", "1.100,00", "1.200,00",
               "1.300,00", "1.400,00", "1.500,00", "1.600,00", "1.700,00", "1.590,00"]
     descriptions = ["INTRODUTOR RADIAL 6FR X 11 CM"] + [f"PRODUTO VIMAN {index}" for index in range(2, 13)]
+    descriptions[3] = "FIO GUIA 14X185 J-TIP PT2 .LS"
     for index, (code, total, description) in enumerate(zip(PDF_CODES, totals, descriptions), 1):
         # Measured real y0 values are 337.23 + (index - 1) * 11.25.
         baseline = 342.61 + (index - 1) * 11.25
         quantity = "2" if index in {4, 6} else "1"
         brand = "BOSTON" if index == 4 else ("APT MEDICAL" if index == 8 else "EPTCA")
         validity = "23/12/34" if index == 4 else "Vigente"
-        values = [str(index), code, description, ANVISA[code], validity, brand, quantity, total, total]
+        unit_value = "500,00" if index == 4 else total
+        values = [str(index), code, description, ANVISA[code], validity, brand, quantity, unit_value, total]
         for x, value in zip(columns, values):
             page.insert_text((x, baseline), value, fontsize=5)
 
@@ -117,11 +119,24 @@ def test_real_viman_coordinates_excel_crossing_and_pdf_integrity(tmp_path):
     assert unmatched == 0
     assert [item.original_order for item in ordered] == [4, 2, 1, 3, 5, 12, 8, 9, 6, 7, 10, 11]
     assert [item.code for item in ordered] == EXCEL_ORDER
+    assert document_integrity_errors(parsed, parsed, ordered) == [
+        "A ordem dos itens no PDF final diverge da planilha base."
+    ]
 
     create_reordered_pdf(source, output, parsed.items, ordered)
     generated = parse_pdf(output)
     assert [item.code for item in generated.items] == EXCEL_ORDER
-    assert document_integrity_errors(parsed, generated) == []
+    assert document_integrity_errors(parsed, generated, ordered) == []
+    first = generated.items[0]
+    assert first.original_order == 1
+    assert first.code == "H7493893101J0"
+    assert first.description == "FIO GUIA 14X185 J-TIP PT2 .LS"
+    assert first.anvisa == "10341350351"
+    assert first.validity == "23/12/34"
+    assert first.brand == "BOSTON"
+    assert first.quantity == 2
+    assert first.unit_value == 500
+    assert first.total_value == 1000
     assert generated.expected_item_count == parsed.expected_item_count == 12
     assert generated.subtotal == parsed.subtotal == "13.290,00"
     assert generated.total_units == parsed.total_units == "14"

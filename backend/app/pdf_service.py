@@ -306,8 +306,17 @@ def integrity_errors(original: list[PdfItem], ordered: list[PdfItem]) -> list[st
     return errors
 
 
-def document_integrity_errors(original: ParsedPdf, generated: ParsedPdf) -> list[str]:
+def document_integrity_errors(
+    original: ParsedPdf,
+    generated: ParsedPdf,
+    expected_order: list[PdfItem] | None = None,
+) -> list[str]:
     errors = integrity_errors(original.items, generated.items)
+    if expected_order is not None:
+        expected_codes = [item.normalized_code for item in expected_order]
+        generated_codes = [item.normalized_code for item in generated.items]
+        if generated_codes != expected_codes:
+            errors.append("A ordem dos itens no PDF final diverge da planilha base.")
     if original.subtotal != generated.subtotal:
         errors.append("Subtotal do documento foi alterado.")
     if original.total != generated.total:
@@ -331,17 +340,26 @@ def _insert_item_number(page: fitz.Page, slot: PdfItem, number: int) -> None:
 
 
 def create_reordered_pdf(source: Path, destination: Path, original: list[PdfItem], ordered: list[PdfItem]) -> None:
+    if len(original) != len(ordered):
+        raise PdfError("Não é possível renderizar: a quantidade de itens e posições é diferente.")
     src = fitz.open(source)
     out = fitz.open(source)
     try:
-        slots = list(original)
+        # Geometry belongs to the destination slots, while row content belongs
+        # to the Excel-ordered items. Never use an item's original Y as its
+        # destination, otherwise sorting succeeds in memory but not visually.
+        row_slots = sorted(original, key=lambda slot: (slot.page, slot.rect.y0))
+        render_plan = list(zip(row_slots, ordered))
+        if not os.getenv("VERCEL"):
+            LOGGER.info("ORDEM PDF ORIGINAL: %s", [item.code for item in row_slots])
+            LOGGER.info("ORDEM A SER RENDERIZADA: %s", [item.code for item in ordered])
         # Redact each detected row only: headers, subtotal and document content
         # outside item slots never enter a redaction rectangle.
-        for slot in slots:
+        for slot in row_slots:
             out[slot.page].add_redact_annot(slot.rect, fill=(1, 1, 1))
         for page in out:
             page.apply_redactions()
-        for new_number, (slot, item) in enumerate(zip(slots, ordered), 1):
+        for new_number, (slot, item) in enumerate(render_plan, 1):
             target = out[slot.page]
             source_clip = fitz.Rect(item.item_rect.x1, item.rect.y0, item.rect.x1, item.rect.y1)
             target_rect = fitz.Rect(slot.item_rect.x1, slot.rect.y0, slot.rect.x1, slot.rect.y1)
