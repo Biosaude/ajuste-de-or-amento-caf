@@ -284,7 +284,11 @@ def parse_pdf(path: Path) -> ParsedPdf:
 
 
 def order_items(items: list[PdfItem], order: list[str]) -> tuple[list[PdfItem], int]:
-    ranks = {code: index for index, code in enumerate(order)}
+    # Keep the worksheet sequence as the sole source of priority.  Building the
+    # map explicitly also makes raw and already-normalized caller input safe.
+    ranks: dict[str, int] = {}
+    for index, code in enumerate(order):
+        ranks.setdefault(normalize_code(code), index)
     found = [item for item in items if item.normalized_code in ranks]
     missing = [item for item in items if item.normalized_code not in ranks]
     found.sort(key=lambda item: (ranks[item.normalized_code], item.original_order))
@@ -351,8 +355,13 @@ def create_reordered_pdf(source: Path, destination: Path, original: list[PdfItem
         row_slots = sorted(original, key=lambda slot: (slot.page, slot.rect.y0))
         render_plan = list(zip(row_slots, ordered))
         if not os.getenv("VERCEL"):
-            LOGGER.info("ORDEM PDF ORIGINAL: %s", [item.code for item in row_slots])
-            LOGGER.info("ORDEM A SER RENDERIZADA: %s", [item.code for item in ordered])
+            LOGGER.info("PDF ORIGINAL:")
+            for slot in row_slots:
+                LOGGER.info("%s -> %s", slot.original_order, slot.code)
+            LOGGER.info("SORTED ITEMS / RENDER:")
+            for number, (slot, item) in enumerate(render_plan, 1):
+                LOGGER.info("slot=%s target_y=%.2f code=%s original_y=%.2f",
+                            number, slot.rect.y0, item.code, item.rect.y0)
         # Redact each detected row only: headers, subtotal and document content
         # outside item slots never enter a redaction rectangle.
         for slot in row_slots:

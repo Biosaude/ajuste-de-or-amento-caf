@@ -92,9 +92,14 @@ async def process(file: UploadFile = File(...), spreadsheet: UploadFile | None =
             shutil.copyfileobj(file.file, destination)
         products = parse_spreadsheet(Path(base["path"]))
         parsed = parse_pdf(source)
-        ordered, missing = order_items(parsed.items, [p.normalized_code for p in products])
+        base_order = [product.code for product in products]
+        ordered, missing = order_items(parsed.items, base_order)
         if not os.getenv("VERCEL"):
-            LOGGER.info("ORDEM EXCEL: %s", [product.code for product in products])
+            LOGGER.info("EXCEL:")
+            for position, code in enumerate(base_order, 1):
+                LOGGER.info("%s -> %s", position, code)
+        if missing == len(parsed.items):
+            raise HTTPException(422, "Nenhum código do PDF corresponde à ordem da planilha base.")
         errors = integrity_errors(parsed.items, ordered)
         if errors:
             raise HTTPException(422, {"message": "Falha na validação de integridade.", "divergences": errors})
