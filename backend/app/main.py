@@ -92,12 +92,12 @@ async def process(file: UploadFile = File(...), spreadsheet: UploadFile | None =
         with source.open("wb") as destination:
             shutil.copyfileobj(file.file, destination)
         products = parse_spreadsheet(Path(base["path"]))
-        LOGGER.info("EXCEL BASE ORDER:")
+        LOGGER.info("=== EXCEL BASE ORDER ===")
         for position, product in enumerate(products, 1):
             LOGGER.info("%s -> %s", position, product.code)
         parsed = parse_pdf(source)
         base_order = [product.code for product in products]
-        LOGGER.info("PDF ORIGINAL:")
+        LOGGER.info("=== PDF ORIGINAL ===")
         for position, item in enumerate(parsed.items, 1):
             LOGGER.info("%s -> %s (raw=%r)", position, item.code, item.code)
         ordered, unmatched_pdf = order_items(parsed.items, base_order)
@@ -105,11 +105,15 @@ async def process(file: UploadFile = File(...), spreadsheet: UploadFile | None =
         pdf_normalized = [normalize_code(item.code) for item in parsed.items]
         matched_codes = [item.normalized_code for item in ordered]
         unmatched_excel = len(excel_normalized) - len(matched_codes)
+        LOGGER.info("=== MATCH ===")
         LOGGER.info("Excel codes: %d; PDF codes: %d; Matched: %d; Unmatched Excel: %d; Unmatched PDF: %d",
                     len(excel_normalized), len(pdf_normalized), len(ordered), unmatched_excel, unmatched_pdf)
         for product in products:
             LOGGER.info("Excel raw=%r parsed=%r normalized=%r match=%s", product.raw_value,
                         product.code, product.normalized_code, product.normalized_code in pdf_normalized)
+        for item in parsed.items:
+            LOGGER.info("PDF raw=%r normalized=%r match=%s", item.code,
+                        item.normalized_code, item.normalized_code in excel_normalized)
         if not ordered:
             LOGGER.error("EXCEL RAW: %s", [product.raw_value for product in products])
             LOGGER.error("EXCEL NORMALIZED: %s", excel_normalized)
@@ -121,12 +125,17 @@ async def process(file: UploadFile = File(...), spreadsheet: UploadFile | None =
                                       "excel_codes": len(excel_normalized), "pdf_codes": len(pdf_normalized),
                                       "matched": len(ordered), "unmatched_excel": unmatched_excel,
                                       "unmatched_pdf": unmatched_pdf})
+        LOGGER.info("=== ORDERED ITEMS ===")
+        for position, item in enumerate(ordered, 1):
+            LOGGER.info("%s %s", position, item.code)
         errors = integrity_errors(parsed.items, ordered)
         if errors:
             raise HTTPException(422, {"message": "Falha na validação de integridade.", "divergences": errors})
         create_reordered_pdf(source, output, parsed.items, ordered)
         reparsed = parse_pdf(output)
-        LOGGER.info("ORDEM EXTRAÍDA DO PDF FINAL: %s", [item.code for item in reparsed.items])
+        LOGGER.info("=== PDF FINAL REEXTRAÍDO ===")
+        for position, item in enumerate(reparsed.items, 1):
+            LOGGER.info("%s %s", position, item.code)
         if [item.normalized_code for item in reparsed.items] != excel_normalized:
             raise ValidationError("O PDF gerado não corresponde à ordem da planilha base.")
         post_errors = document_integrity_errors(parsed, reparsed, ordered)

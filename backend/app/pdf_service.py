@@ -362,13 +362,13 @@ def create_reordered_pdf(source: Path, destination: Path, original: list[PdfItem
         row_slots = sorted(original, key=lambda slot: (slot.page, slot.rect.y0))
         render_plan = list(zip(row_slots, ordered))
         if not os.getenv("VERCEL"):
-            LOGGER.info("PDF ORIGINAL:")
+            LOGGER.info("=== PDF ORIGINAL ===")
             for slot in row_slots:
                 LOGGER.info("%s -> %s", slot.original_order, slot.code)
-            LOGGER.info("SORTED ITEMS / RENDER:")
+            LOGGER.info("=== RENDER TARGET ===")
             for number, (slot, item) in enumerate(render_plan, 1):
-                LOGGER.info("slot=%s target_y=%.2f code=%s original_y=%.2f",
-                            number, slot.rect.y0, item.code, item.rect.y0)
+                LOGGER.info("slot %s <- %s target_y=%.2f original_y=%.2f",
+                            number, item.code, slot.rect.y0, item.rect.y0)
         # Redact each detected row only: headers, subtotal and document content
         # outside item slots never enter a redaction rectangle.
         for slot in row_slots:

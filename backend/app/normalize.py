@@ -18,8 +18,17 @@ def normalize_code(value: object) -> str:
     """
     if value is None:
         return ""
-    text = str(value).replace("\u00a0", " ").strip().upper()
-    return re.sub(r"\s+", "", text)
+    # NFKC makes visually equivalent forms (for example full-width Latin
+    # characters copied from a PDF) comparable without touching punctuation.
+    text = unicodedata.normalize("NFKC", str(value)).upper()
+    # PDF text layers may contain formatting controls which are neither visible
+    # nor matched by ``\s``.  Remove those together with all whitespace, while
+    # deliberately preserving every printable character in the reference.
+    return "".join(
+        character
+        for character in text
+        if not character.isspace() and unicodedata.category(character) != "Cf"
+    )
 
 
 def money(value: str) -> Decimal | None:
