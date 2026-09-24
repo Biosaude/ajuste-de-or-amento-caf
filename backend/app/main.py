@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 
 from .excel_service import SpreadsheetError, parse_spreadsheet
-from .pdf_service import PdfError, create_reordered_pdf, integrity_errors, order_items, parse_pdf
+from .pdf_service import PdfError, create_reordered_pdf, document_integrity_errors, integrity_errors, order_items, parse_pdf
 from .storage import DATA, audit, get_base, init_db, set_base
 
 app = FastAPI(title="Ordenador de Orçamentos", version="1.0.0")
@@ -96,9 +96,7 @@ async def process(file: UploadFile = File(...), spreadsheet: UploadFile | None =
             raise HTTPException(422, {"message": "Falha na validação de integridade.", "divergences": errors})
         create_reordered_pdf(source, output, parsed.items, ordered)
         reparsed = parse_pdf(output)
-        post_errors = integrity_errors(parsed.items, reparsed.items)
-        if len(reparsed.items) != len(parsed.items):
-            post_errors.append("O PDF final não contém a mesma quantidade de linhas detectáveis.")
+        post_errors = document_integrity_errors(parsed, reparsed)
         if post_errors:
             raise HTTPException(422, {"message": "Falha na validação de integridade. O documento final apresentou divergências em relação ao orçamento original.", "divergences": post_errors})
         source.unlink(missing_ok=True)
