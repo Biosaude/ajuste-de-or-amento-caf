@@ -4,6 +4,7 @@ __pycache__/
 *.pyc
 node_modules/
 dist/
+*.tsbuildinfo
 data/*
 !data/.gitkeep
 frontend/.env.local
