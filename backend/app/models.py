@@ -24,4 +24,6 @@ class PdfItem:
     unit_value: Decimal | None = None
     total_value: Decimal | None = None
     words: tuple[str, ...] = field(default_factory=tuple)
-
+    anvisa: str = ""
+    validity: str = ""
+    brand: str = ""

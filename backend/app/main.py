@@ -2,6 +2,7 @@ import shutil
 import tempfile
 import uuid
 import base64
+import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,9 +13,10 @@ from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 
 from .excel_service import SpreadsheetError, parse_spreadsheet
-from .pdf_service import PdfError, create_reordered_pdf, integrity_errors, order_items, parse_pdf
+from .pdf_service import PdfError, create_reordered_pdf, document_integrity_errors, integrity_errors, order_items, parse_pdf
 from .storage import DATA, audit, get_base, init_db, set_base
 
+LOGGER = logging.getLogger(__name__)
 app = FastAPI(title="Ordenador de Orçamentos", version="1.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"], allow_methods=["*"], allow_headers=["*"])
 BASE_FILE = DATA / "current_base"
@@ -91,14 +93,16 @@ async def process(file: UploadFile = File(...), spreadsheet: UploadFile | None =
         products = parse_spreadsheet(Path(base["path"]))
         parsed = parse_pdf(source)
         ordered, missing = order_items(parsed.items, [p.normalized_code for p in products])
+        if not os.getenv("VERCEL"):
+            LOGGER.info("ORDEM EXCEL: %s", [product.code for product in products])
         errors = integrity_errors(parsed.items, ordered)
         if errors:
             raise HTTPException(422, {"message": "Falha na validação de integridade.", "divergences": errors})
         create_reordered_pdf(source, output, parsed.items, ordered)
         reparsed = parse_pdf(output)
-        post_errors = integrity_errors(parsed.items, reparsed.items)
-        if len(reparsed.items) != len(parsed.items):
-            post_errors.append("O PDF final não contém a mesma quantidade de linhas detectáveis.")
+        if not os.getenv("VERCEL"):
+            LOGGER.info("ORDEM EXTRAÍDA DO PDF FINAL: %s", [item.code for item in reparsed.items])
+        post_errors = document_integrity_errors(parsed, reparsed, ordered)
         if post_errors:
             raise HTTPException(422, {"message": "Falha na validação de integridade. O documento final apresentou divergências em relação ao orçamento original.", "divergences": post_errors})
         source.unlink(missing_ok=True)

@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 from openpyxl import load_workbook
@@ -12,6 +13,13 @@ DESC_NAMES = ("descricao", "descrição", "desc.", "nome")
 
 class SpreadsheetError(ValueError):
     pass
+
+
+def extract_reference(value: object) -> str:
+    """Return the reference from composite ``ANVISA - REFERÊNCIA`` cells."""
+    text = clean_text(value)
+    parts = re.split(r"\s+-\s+", text, maxsplit=1)
+    return clean_text(parts[1]) if len(parts) == 2 else text
 
 
 def _rows(path: Path) -> list[list[object]]:
@@ -50,7 +58,8 @@ def parse_spreadsheet(path: Path) -> list[BaseProduct]:
     seen: set[str] = set()
     for row in rows[header_idx + 1 :]:
         raw = row[code_col] if code_col < len(row) else None
-        code, normalized = clean_text(raw), normalize_code(raw)
+        code = extract_reference(raw)
+        normalized = normalize_code(code)
         if not normalized or normalized in seen:
             continue
         description = clean_text(row[desc_col]) if desc_col is not None and desc_col < len(row) else ""
@@ -59,4 +68,3 @@ def parse_spreadsheet(path: Path) -> list[BaseProduct]:
     if not products:
         raise SpreadsheetError("A coluna identificada não contém códigos de produtos.")
     return products
-
