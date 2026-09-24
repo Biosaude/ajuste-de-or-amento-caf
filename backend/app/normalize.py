@@ -11,14 +11,15 @@ def clean_text(value: object) -> str:
 
 
 def normalize_code(value: object) -> str:
-    text = clean_text(value).upper()
-    # Excel commonly turns an identifier into 123.0. Preserve other punctuation.
-    if re.fullmatch(r"\d+\.0+", text):
-        text = text.split(".", 1)[0]
-    compact = re.sub(r"[^A-Z0-9]", "", text)
-    if compact.isdigit():
-        compact = compact.lstrip("0") or "0"
-    return compact
+    """Normalize spacing/case without changing meaningful code characters.
+
+    Dots, hyphens, letters and leading zeroes are part of a material reference;
+    removing any of them can create both false negatives and false positives.
+    """
+    if value is None:
+        return ""
+    text = str(value).replace("\u00a0", " ").strip().upper()
+    return re.sub(r"\s+", "", text)
 
 
 def money(value: str) -> Decimal | None:
@@ -31,4 +32,3 @@ def money(value: str) -> Decimal | None:
         return Decimal(candidate)
     except InvalidOperation:
         return None
-

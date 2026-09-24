@@ -22,6 +22,15 @@ def extract_reference(value: object) -> str:
     return clean_text(parts[1]) if len(parts) == 2 else text
 
 
+def split_anvisa_reference(value: object) -> tuple[str, str]:
+    """Split only the spaced delimiter, preserving hyphens inside references."""
+    text = clean_text(value)
+    parts = re.split(r"\s+-\s+", text, maxsplit=1)
+    if len(parts) == 2:
+        return clean_text(parts[0]), clean_text(parts[1])
+    return "", text
+
+
 def _rows(path: Path) -> list[list[object]]:
     if path.suffix.lower() == ".xlsx":
         book = load_workbook(path, read_only=True, data_only=True)
@@ -58,12 +67,12 @@ def parse_spreadsheet(path: Path) -> list[BaseProduct]:
     seen: set[str] = set()
     for row in rows[header_idx + 1 :]:
         raw = row[code_col] if code_col < len(row) else None
-        code = extract_reference(raw)
+        anvisa, code = split_anvisa_reference(raw)
         normalized = normalize_code(code)
         if not normalized or normalized in seen:
             continue
         description = clean_text(row[desc_col]) if desc_col is not None and desc_col < len(row) else ""
-        products.append(BaseProduct(code, normalized, description))
+        products.append(BaseProduct(code, normalized, description, clean_text(raw), anvisa))
         seen.add(normalized)
     if not products:
         raise SpreadsheetError("A coluna identificada não contém códigos de produtos.")

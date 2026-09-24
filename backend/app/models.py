@@ -9,6 +9,8 @@ class BaseProduct:
     code: str
     normalized_code: str
     description: str = ""
+    raw_value: str = ""
+    anvisa: str = ""
 
 
 @dataclass(slots=True)

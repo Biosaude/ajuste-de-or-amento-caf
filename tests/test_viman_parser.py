@@ -113,6 +113,10 @@ def test_real_viman_coordinates_excel_crossing_and_pdf_integrity(tmp_path):
     products = parse_spreadsheet(spreadsheet)
     base_order = [product.code for product in products]
     assert base_order == EXCEL_ORDER
+    assert products[0].raw_value == "10341350351 - H7493893101J0"
+    assert products[0].anvisa == "10341350351"
+    assert products[0].code == "H7493893101J0"
+    assert products[10].code == "LP-P-30S-YNP20"
     ordered, unmatched = order_items(parsed.items, [product.normalized_code for product in products])
     assert len(products) == 12
     assert len(ordered) - unmatched == 12

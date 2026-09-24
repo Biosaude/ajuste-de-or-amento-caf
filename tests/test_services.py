@@ -11,16 +11,22 @@ def item(order, code, total):
 
 
 def test_normalizes_excel_number_and_formatting():
-    assert normalize_code("  00042.0\u200b") == "42"
-    assert normalize_code("ab-12.30") == "AB1230"
+    assert normalize_code("  00042.0\u00a0") == "00042.0"
+    assert normalize_code(" ab-12.30 ") == "AB-12.30"
 
 
-def test_orders_missing_last_stably_and_keeps_integrity():
+def test_orders_only_matches_by_worksheet_sequence():
     original = [item(1, "A", Decimal("2")), item(2, "X", Decimal("3")), item(3, "B", Decimal("4"))]
     ordered, missing = order_items(original, ["B", "A"])
-    assert [x.code for x in ordered] == ["B", "A", "X"]
+    assert [x.code for x in ordered] == ["B", "A"]
     assert missing == 1
-    assert integrity_errors(original, ordered) == []
+    assert integrity_errors(original, ordered) == ["Quantidade de itens foi alterada.", "Códigos, quantidades ou valores divergem.", "Quantidade total de unidades diverge.", "Soma dos valores totais diverge."]
+
+
+def test_normalization_preserves_reference_punctuation_and_zeroes():
+    assert normalize_code(" 42.10.20100 ") == "42.10.20100"
+    assert normalize_code(" lp-p-30s-ynp20 ") == "LP-P-30S-YNP20"
+    assert normalize_code(" 00 A-1 ") == "00A-1"
 
 
 def test_orders_items_by_exact_worksheet_sequence_without_a_pdf():

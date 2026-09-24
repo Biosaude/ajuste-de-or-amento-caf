@@ -21,6 +21,10 @@ class PdfError(ValueError):
     pass
 
 
+class ValidationError(PdfError):
+    pass
+
+
 @dataclass(slots=True)
 class ParsedPdf:
     budget_number: str
@@ -284,15 +288,18 @@ def parse_pdf(path: Path) -> ParsedPdf:
 
 
 def order_items(items: list[PdfItem], order: list[str]) -> tuple[list[PdfItem], int]:
-    # Keep the worksheet sequence as the sole source of priority.  Building the
-    # map explicitly also makes raw and already-normalized caller input safe.
-    ranks: dict[str, int] = {}
-    for index, code in enumerate(order):
-        ranks.setdefault(normalize_code(code), index)
-    found = [item for item in items if item.normalized_code in ranks]
-    missing = [item for item in items if item.normalized_code not in ranks]
-    found.sort(key=lambda item: (ranks[item.normalized_code], item.original_order))
-    return found + missing, len(missing)
+    # Iterate the worksheet, never the PDF: the base is the sole authority for
+    # final order. Lists preserve duplicate references without a lossy set.
+    pdf_map: dict[str, list[PdfItem]] = {}
+    for item in items:
+        pdf_map.setdefault(normalize_code(item.code), []).append(item)
+    ordered: list[PdfItem] = []
+    for raw_code in order:
+        candidates = pdf_map.get(normalize_code(raw_code), [])
+        if candidates:
+            ordered.append(candidates.pop(0))
+    unmatched_pdf = sum(len(candidates) for candidates in pdf_map.values())
+    return ordered, unmatched_pdf
 
 
 def integrity_errors(original: list[PdfItem], ordered: list[PdfItem]) -> list[str]:
