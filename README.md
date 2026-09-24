@@ -21,7 +21,7 @@ diretório temporário e removidos automaticamente; apenas a planilha base escol
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -r backend/requirements.txt
+pip install -r requirements.txt
 uvicorn backend.app.main:app --reload --port 8000
 ```
 
@@ -43,6 +43,11 @@ Directory. O `vercel.json` fixa o preset Vite, executa `npm install` e
 `npm run build`, publica `frontend/dist` e encaminha `/api/*` para a função
 Python ASGI em `api/index.py`. As demais rotas recebem `index.html`, incluindo
 a rota principal `/`.
+
+O `requirements.txt` da raiz é a fonte única das dependências Python. Cada
+pacote está listado diretamente e com versão fixa para que o runtime Python da
+Vercel consiga analisar e instalar as dependências da Function sem seguir um
+arquivo de requisitos aninhado.
 
 Na Vercel, a função é stateless: por isso o frontend envia a planilha junto com
 o PDF na geração, e o PDF resultante volta na própria resposta. Isso evita
