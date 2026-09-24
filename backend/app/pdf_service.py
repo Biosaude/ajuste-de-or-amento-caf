@@ -14,7 +14,7 @@ from .models import PdfItem
 from .normalize import clean_text, money, normalize_code
 
 LOGGER = logging.getLogger(__name__)
-Y_TOLERANCE = 3.5
+Y_TOLERANCE = 2.0
 
 
 class PdfError(ValueError):
@@ -30,6 +30,7 @@ class ParsedPdf:
     expected_item_count: int | None = None
     subtotal: str = "Não identificado"
     total_units: str = "Não identificado"
+    total_products: str = "Não identificado"
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,13 +133,18 @@ def _find_header(words: list[PositionedText]) -> tuple[dict[str, float], float, 
         found: dict[str, float] = {}
         normalized = [_label(word.text) for word in band]
         for pos, word in enumerate(band):
-            candidates = [normalized[pos]]
-            if pos + 1 < len(band):
-                candidates.append(normalized[pos] + normalized[pos + 1])
             for name, matches in HEADER_MATCHERS.items():
-                if name not in found and any(matches(candidate) for candidate in candidates):
+                if name not in found and matches(normalized[pos]):
                     found[name] = word.x
-        required = {"item", "code", "description", "quantity", "unit_value", "total_value"}
+            # Only value headings need adjacent-token composition ("Vr." +
+            # "unit."). Combining every pair made "produto Reg.ANVISA" claim
+            # the description's X position as the ANVISA anchor.
+            if pos + 1 < len(band):
+                joined = normalized[pos] + normalized[pos + 1]
+                for name in ("unit_value", "total_value"):
+                    if name not in found and HEADER_MATCHERS[name](joined):
+                        found[name] = word.x
+        required = {"item", "code", "description", "anvisa", "quantity"}
         if required <= found.keys() and found["item"] < found["code"] < found["description"]:
             ordered = sorted(found.items(), key=lambda pair: pair[1])
             # Require monotonically recognizable table columns, but tolerate
@@ -199,8 +205,8 @@ def _extract_page(page: fitz.Page, page_no: int, words: list[PositionedText]) ->
         validity = _column_text(row_words, bounds["validity"]) if "validity" in bounds else ""
         brand = _column_text(row_words, bounds["brand"]) if "brand" in bounds else ""
         quantity_text = _column_text(row_words, bounds["quantity"])
-        unit_text = _column_text(row_words, bounds["unit_value"])
-        total_text = _column_text(row_words, bounds["total_value"])
+        unit_text = _column_text(row_words, bounds["unit_value"]) if "unit_value" in bounds else ""
+        total_text = _column_text(row_words, bounds["total_value"]) if "total_value" in bounds else ""
         item_left, item_right = bounds["item"]
         rect = fitz.Rect(0, max(table_top, min((word.y0 for word in row_words), default=top) - 1),
                          page.rect.width, min(table_bottom, max((word.y1 for word in row_words), default=bottom) + 1))
@@ -254,6 +260,8 @@ def parse_pdf(path: Path) -> ParsedPdf:
             method, items, debug = max(attempts, key=lambda attempt: len(attempt[1]))
 
         if not items:
+            LOGGER.warning("VIMAN table not parsed: expected=%s attempts=%s", expected,
+                           [{"method": name, "pages": details} for name, _, details in attempts])
             raise PdfError("Não foi possível identificar as linhas da tabela de itens neste modelo de PDF.")
         if expected is not None and len(items) != expected:
             codes = ", ".join(item.code for item in items) or "nenhum"
@@ -269,6 +277,7 @@ def parse_pdf(path: Path) -> ParsedPdf:
             expected,
             _field(all_text, r"subtotal"),
             _field(all_text, r"total\s+de\s+unidades|total\s+unidades"),
+            _field(all_text, r"total\s+produtos"),
         )
     finally:
         doc.close()
@@ -305,7 +314,20 @@ def document_integrity_errors(original: ParsedPdf, generated: ParsedPdf) -> list
         errors.append("Total geral do documento foi alterado.")
     if original.total_units != generated.total_units:
         errors.append("Total de unidades do documento foi alterado.")
+    if original.total_products != generated.total_products:
+        errors.append("Total de produtos do documento foi alterado.")
     return errors
+
+
+def _insert_item_number(page: fitz.Page, slot: PdfItem, number: int) -> None:
+    # insert_textbox silently omits text when a compact VIMAN row is a fraction
+    # shorter than its font line-height. A baseline insertion is deterministic.
+    font_size = max(4.0, min(8.0, slot.item_rect.height * 0.62))
+    text = str(number)
+    width = fitz.get_text_length(text, fontname="helv", fontsize=font_size)
+    x = slot.item_rect.x0 + max(0.0, (slot.item_rect.width - width) / 2)
+    baseline = slot.item_rect.y1 - max(0.8, (slot.item_rect.height - font_size) / 2)
+    page.insert_text((x, baseline), text, fontsize=font_size, fontname="helv")
 
 
 def create_reordered_pdf(source: Path, destination: Path, original: list[PdfItem], ordered: list[PdfItem]) -> None:
@@ -325,8 +347,7 @@ def create_reordered_pdf(source: Path, destination: Path, original: list[PdfItem
             target_rect = fitz.Rect(slot.item_rect.x1, slot.rect.y0, slot.rect.x1, slot.rect.y1)
             target.show_pdf_page(target_rect, src, item.page, clip=source_clip,
                                  keep_proportion=False, overlay=True)
-            target.insert_textbox(slot.item_rect, str(new_number), fontsize=8,
-                                  fontname="helv", align=fitz.TEXT_ALIGN_CENTER)
+            _insert_item_number(target, slot, new_number)
         out.save(destination, garbage=4, deflate=True)
     finally:
         src.close()
