@@ -29,6 +29,11 @@ def test_normalization_preserves_reference_punctuation_and_zeroes():
     assert normalize_code(" 00 A-1 ") == "00A-1"
 
 
+def test_normalization_removes_pdf_invisible_characters_and_normalizes_unicode():
+    assert normalize_code("\u200b h749\u20603101j0\u00a0") == "H7493101J0"
+    assert normalize_code("ＬＰ－Ｐ－３０Ｓ－ＹＮＰ２０") == "LP-P-30S-YNP20"
+
+
 def test_orders_items_by_exact_worksheet_sequence_without_a_pdf():
     pdf_codes = [
         "42.10.20100", "53610013", "832804", "H7493893101J0",
